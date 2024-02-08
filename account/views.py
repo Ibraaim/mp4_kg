@@ -1,104 +1,37 @@
-from django.shortcuts import render,redirect
-from django.views import View
-from .serializers import RegistrationSerializer,ActivationSerializer,ResetPasswordSerializer
-from rest_framework import status
+from django.contrib.auth import get_user_model, authenticate, login
 from django.http import HttpResponseRedirect
-from django.urls import reverse
-from rest_framework.permissions import IsAuthenticated
-from django.core.mail import send_mail
-from drf_yasg.utils import swagger_auto_schema
+from django.shortcuts import render, redirect
 from rest_framework.response import Response
-from rest_framework.generics import GenericAPIView , get_object_or_404,ListAPIView
-from django.contrib.auth import get_user_model,authenticate, login
+from rest_framework.views import APIView
+from rest_framework_simplejwt.tokens import RefreshToken
+
+# from shop_ada.tasks import send_confirmation_email_task, send_confirmation_password_task
+from .serializers import RegistrationSerializer, ActivationSerializer, UserSerializer,  ConfirmPasswordSerializer, ResetPasswordSerializer
+from .send_email import send_confirmation_email, send_confirmation_password
+from rest_framework.generics import GenericAPIView, get_object_or_404, ListAPIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework import permissions
-from .send_email import send_confirmation_email,send_confirmation_password
-from rest_framework.authtoken.models import Token
-from rest_framework.views import APIView
-from django.contrib import messages
-from mp3_club.tasks import send_confirmation_email_task,send_confirmation_password_task
+from django.views import View
+from rest_framework import status
+from django.urls import reverse
 User = get_user_model()
 
-class RegistrationView(APIView):
-    templates_name = 'registration.html'
 
-    def get(self, request):
-        return render(request, self.templates_name)
-
-    def post(self, request):
-        if request.data.get('is_author', False) == 'on':
-            is_author = True
-        serializer = RegistrationSerializer(data=request.data)
-        if serializer.is_valid():
-            user = serializer.save(is_author=is_author)
-            if user:
-                try:
-                    send_confirmation_email_task.delay(user.email, user.activation_code)
-                    return redirect('dashboard')
-                except:
-                    return Response({'message': "Зарегистрировался, но на почту код не отправился", 'data': serializer.data}, status=201)
-            return Response({'message': 'User registered successfully'}, status=201)
-        else:
-            return render(request, self.templates_name, {'error': serializer.errors})
-
-def activation_view(request):
-    return render(request, 'activation.html')
+# Create your views here.
 
 
-class DashboardView(View):
-    templates_name = 'dashboard.html'
-
-    def get(self, request):
-        return render(request, self.templates_name)
-    
-    def post(self, request):
-        action = request.POST.get('action', None)
-
-        if action == 'login':
-            return redirect('login')
-        elif action == 'register':
-            return redirect('registration')
-        else:
-            error_message = 'Invalid action'
-            return render(request, self.templates_name, {'error': error_message})
-
-        
-from django.shortcuts import render, redirect
-from django.contrib.auth import authenticate, login
-from django.views import View
-from django.contrib import messages
-import logging
-
-logger = logging.getLogger(__name__)
-class LoginView(View):
-    template_name = 'login.html'
-    
-    def get(self, request):
-        return render(request, self.template_name)
-    
-    def post(self, request):
-        email = request.POST.get('email')
-        password = request.POST.get('password')
-        
-        if not email or not password:
-            return render(request, self.template_name, {'error': 'Email and Password are required!'})
-        
-        user = authenticate(request, email=email, password=password)
-        
-        if user is not None:
-            login(request, user)
-            token, created = Token.objects.get_or_create(user=user)
-
-            if token:
-                # logger.info('Редирект на music_website')
-                return redirect('music_website')
-            else:
-                # logger.error('Ошибка при получении токена')
-                return redirect('login')
-        else:
-            messages.error(request, 'Invalid email or password')
-            # logger.warning('Неверный email или пароль')
-            return render(request, self.template_name, {'error': 'Invalid email or password'})
+# class RegistrationView(APIView):
+#     def post(self, request):
+#         serializer = RegistrationSerializer(data=request.data)
+#         serializer.is_valid(raise_exception=True)
+#         user = serializer.save()
+#         if user:
+#             # try:
+#                 send_confirmation_email(email=user.email, code=user.activation_code)
+#             # except:
+#                 # return Response({'message': "Зарегистрировался но на почту код не отправился",
+#                 #                  'data': serializer.data}, status=201)
+#         return Response(serializer.data, status=201)
 
 
 class ActivationView(GenericAPIView):
@@ -108,59 +41,143 @@ class ActivationView(GenericAPIView):
         code = request.GET.get('u')
         user = get_object_or_404(User, activation_code=code)
         user.is_active = True
+        user.activation_code = ''
         user.save()
-        return redirect('activation')
-    
-    def post(self,request):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception = True)
-        serializer.save()
-        return redirect('activation')
-    
+        return Response('Успешно активирован', status=200)
 
-class ResetView(APIView):
-    templates_name = 'reset_password_1.html'
-
-
-    def get(self, request):
-        return render(request, self.templates_name)
-    
     def post(self, request):
-        email = request.data.get('email')
-        if not email:
-            return render(request,self.templates_name,{'error': 'Пожалуйста, укажите электронный адрес'})
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response('Успешно активирован', status=200)
+
+
+# class LoginView(TokenObtainPaiiew):
+#     permission_classes = (permissions.AllowAny,)rView):
+#     permission_classes = (permissions.AllowAny,)
+
+
+class UserListView(ListAPIView):
+    queryset = User.objects.all()
+    serializer_class = UserSerializer
+    permission_classes = (permissions.IsAdminUser,)
+
+
+class LogoutView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
         try:
-            user = User.objects.get(email=email)
-        except User.DoesNotExist:
-            return render(request,self.templates_name,{'error': 'Пользователь с указанным адресом не найден'})
-        password_change_code = user.create_number_code()
-        user.password_change_code = password_change_code
-        user.save()
-        send_confirmation_password(user.email,password_change_code)
+            refresh_token = request.data["refresh"]
+            token = RefreshToken(refresh_token)
+            token.blacklist()
+            return Response({"message": "Logout successful"}, status=200)
+        except Exception as e:
+            return Response({"error": "Invalid token"}, status=400)
 
-        return redirect('reset_password_2')
-    
 
-class ResetPasswordView(View):
-    template_name = 'reset_password_2.html'
+class LoginView(View):
+    template_name = 'account/login.html'
 
     def get(self, request):
         return render(request, self.template_name)
 
     def post(self, request):
         email = request.POST.get('email')
-        if not email:
-            return render(request, self.template_name, {'error': 'Пожалуйста, укажите электронный адрес'})
-        
-        try:
-            user = User.objects.get(email=email)
-        except User.DoesNotExist:
-            return render(request, self.template_name, {'error': 'Пользователь с указанным адресом не найден'})
-        
-        serializer = ResetPasswordSerializer(user, data=request.POST)
-        if serializer.is_valid():
-            serializer.save()
+        password = request.POST.get('password')
+        if not email or not password:
+            return render(request, self.template_name, {'error': 'Email and password are required'})
+        user = authenticate(request, email=email, password=password)
+        if user:
+            login(request, user)
+            token_view = TokenObtainPairView.as_view()
+            token_response = token_view(request)
+            if token_response.status_code == status.HTTP_200_OK:
+                return HttpResponseRedirect(reverse('dashboard') + f'?token={token_response.data["access"]}')
+        else:
+            return render(request, self.template_name, {'error': 'Invalid data'})
+
+        return render(request, self.template_name)
+
+
+class DashboardView(View):
+    template_name = 'account/dashboard.html'
+
+    def get(self, request):
+        return render(request, self.template_name)
+
+    def post(self, request):
+        action = request.POST.get('action', None)
+
+        if action == 'login':
             return redirect('login')
+        elif action == 'register':
+            return redirect('registration')
+        else:
+            return render(request, self.template_name, {'error': 'Invalid action'})
 
-        return render(request, self.template_name, {'error': serializer.errors})
 
+class RegistrationView(APIView):
+    template_name = 'account/registration.html'
+
+    def get(self, request):
+        return render(request, self.template_name)
+
+    def post(self, request):
+        serializer = RegistrationSerializer(data=request.data)
+        if serializer.is_valid():
+            user = serializer.save()
+            if user:
+                try:
+                    send_confirmation_email(user.email, user.activation_code)
+
+                    return redirect('activation')
+                except:
+                    return Response({'message': "Зарегистрировался но на почту код не отправился",
+                                     'data': serializer.data}, status=201)
+            return Response({'message': 'User registered successfully'}, status=201)
+        else:
+            return render(request, self.template_name, {'errors': serializer.errors})
+
+
+def activation_view(request):
+    return render(request, 'account/activation.html')
+
+
+# class RegistrationPhoneView(APIView):
+#     def post(self, request):
+#         data = request.data
+#         serializer = RegistrationPhoneSerializer(data=data)
+#         if serializer.is_valid(raise_exception=True):
+#             serializer.save()
+#             return Response('Успешно зарегистрирован', status=201)
+
+
+class ResetPasswordView(APIView):
+    def get(self, request):
+        return Response({'message': 'Please provide an email to reset the password'})
+
+    def post(self, request):
+        serializer = ConfirmPasswordSerializer(data=request.data)
+        if serializer.is_valid():
+            email = serializer.validated_data['email']
+            try:
+                user = User.objects.get(email=email)
+                send_confirmation_password(user.email, user.activation_code)
+                return Response({'activation_code': user.activation_code}, status=200)
+            except User.DoesNotExist:
+                return Response({'message': 'User with this email does not exist.'}, status=404)
+        return Response(serializer.errors, status=400)
+
+
+class ResetPasswordConfirmView(APIView):
+    def post(self, request):
+        code = request.GET.get('u')
+        user = get_object_or_404(User, activation_code=code)
+        serializer = ResetPasswordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        new_password = serializer.validated_data['new_password']
+        user.set_password(new_password)
+        user.activation_code = ''
+        user.save()
+        return Response('Your password has been successfully updated', status=200)

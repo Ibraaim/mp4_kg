@@ -8,6 +8,7 @@ urlpatterns = [
     path('music/<int:pk>/like/', MusicOutputView.as_view({'post': 'like', 'delete': 'like',})),
     path('music/',MusicOutputView.as_view({'get': 'list'})),
     path('delete/<int:pk>/', MusicDetailView.as_view()),
+    # path('search/', search, name='search'),
 
     #HTML.CSS
     path('music-website/', music_website,name = 'music_website'),

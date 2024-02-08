@@ -24,11 +24,6 @@ from django.shortcuts import get_object_or_404
 import logging
 logger = logging.getLogger(__name__)
 
-
-
-
-
-
 #For Post in PostMan
 class MusicView(APIView):
     queryset = Music.objects.all()
@@ -97,28 +92,6 @@ class MusicView(APIView):
         except Exception as e:
             return Response({'error': f'An error occurred: {str(e)}'}, status=500)
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 #Get in Postman
 class MusicOutputView(viewsets.ViewSet):
     def list(self, request):
@@ -177,35 +150,6 @@ class MusicDetailView(DestroyAPIView):
         context = super().get_serializer_context()
         context.update({"request": self.request})
         return context
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
